@@ -313,23 +313,29 @@ async function listDshowAudioDevices(bin: string): Promise<string[]> {
 
 export function parseDshowAudioDevices(raw: string): string[] {
   const devices = new Set<string>()
-  let inAudio = false
+  const state = { audio: false }
+  const legacy = /"([^"]+)"\s+\(audio\)/
+  const quoted = /"([^"]+)"/
+  const section = (line: string) => /DirectShow audio devices/i.test(line)
+  const other = (line: string) => /DirectShow (video|external) devices/i.test(line)
+  const alt = (line: string) => /Alternative name/i.test(line)
+
   for (const line of raw.split(/\r?\n/)) {
-    if (/DirectShow\s+audio\s+devices/i.test(line)) {
-      inAudio = true
-      continue
-    }
-    if (inAudio && /DirectShow\s+video/i.test(line)) break
-    // Skip "Alternative name" lines — they are long device paths, not display names
-    if (/Alternative name/i.test(line)) continue
-    if (!inAudio) {
-      // Some FFmpeg versions mark audio devices inline: "Device Name" (audio)
-      for (const match of line.matchAll(/"([^"]+)"\s+\(audio\)/g)) devices.add(match[1]!)
-      continue
-    }
-    // Under "DirectShow audio devices" section, capture all quoted names
-    const match = line.match(/"([^"]+)"/)
+    const match = legacy.exec(line)
     if (match) devices.add(match[1]!)
+
+    if (section(line)) {
+      state.audio = true
+      continue
+    }
+    if (other(line)) {
+      if (!state.audio) continue
+      state.audio = false
+      break
+    }
+    if (!state.audio || alt(line)) continue
+    const found = quoted.exec(line)
+    if (found) devices.add(found[1]!)
   }
   return [...devices]
 }
