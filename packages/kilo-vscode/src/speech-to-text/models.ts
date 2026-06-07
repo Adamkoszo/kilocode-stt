@@ -41,7 +41,7 @@ const models: SpeechToTextModelDef[] = [
 ]
 
 export const SPEECH_TO_TEXT_MODELS: readonly SpeechToTextModelDef[] = models
-export const DEFAULT_SPEECH_TO_TEXT_MODEL: SpeechToTextModelDef = models[0]!
+export const DEFAULT_SPEECH_TO_TEXT_MODEL: SpeechToTextModelDef = models[4]!
 
 export function getSpeechToTextModel(id: string | undefined): SpeechToTextModelDef {
   for (const model of models) {
