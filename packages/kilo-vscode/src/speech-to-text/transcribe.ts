@@ -1,10 +1,13 @@
 import type { KiloConnectionService } from "../services/cli-backend/connection-service"
 import { getErrorMessage } from "../kilo-provider-utils"
 import { getSpeechToTextModel } from "./models"
+import { transcribeLocal } from "./transcribe-local"
 
 const PATH = "/kilo/audio/transcriptions"
 const PROMPT =
   "Transcribe exactly what is spoken. Do not paraphrase, summarize, infer intent, or rewrite for clarity. Preserve the speaker's original wording as closely as possible, including incomplete phrases and unusual wording when audible."
+
+const LOCAL_MODELS = new Set(["openai/whisper-large-v3", "openai/whisper-large-v3-turbo"])
 
 type Req = {
   model?: string
@@ -36,12 +39,19 @@ export async function transcribeSpeech(
   dir: string,
   signal?: AbortSignal,
 ): Promise<SpeechToTextResult> {
+  const model = getSpeechToTextModel(input.model)
+
+  // Route Whisper Large V3 models to local Python transcription
+  // to bypass Kilo cloud backend Groq routing bug (JSON→multipart conversion issue)
+  if (LOCAL_MODELS.has(model.id)) {
+    return transcribeLocal(input.data, input.language, model.id, signal)
+  }
+
   const cfg = connection.getServerConfig()
   if (!cfg) return { ok: false, error: "Not connected to the Kilo backend", code: "not_connected" }
 
   const auth = Buffer.from(`kilo:${cfg.password}`).toString("base64")
   const url = new URL(PATH, cfg.baseUrl)
-  const model = getSpeechToTextModel(input.model)
   const prompt = model.verbatim ? PROMPT : undefined
   if (dir) url.searchParams.set("directory", dir)
 
