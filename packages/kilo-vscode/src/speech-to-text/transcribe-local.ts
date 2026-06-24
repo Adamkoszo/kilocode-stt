@@ -1,6 +1,64 @@
+import { spawn } from "../util/process"
+import * as path from "path"
 import type { SpeechToTextResult } from "./transcribe"
 
-const URL = "http://127.0.0.1:15557/transcribe"
+const PORT = "15557"
+const URL = `http://127.0.0.1:${PORT}/transcribe`
+const HEALTH = `http://127.0.0.1:${PORT}/health`
+const HEALTH_GRACE = 3000 // 3s for server to start responding
+
+let didWarn = false
+
+async function ensureServer(): Promise<boolean> {
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 2000)
+    const res = await fetch(HEALTH, { signal: ctrl.signal })
+    clearTimeout(timer)
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+async function startServer(): Promise<boolean> {
+  // Find the project root — navigating up from dist/
+  // The server script is at <root>/02_scripts/helpers/whisper_server.py
+  // When running via bun run extension, __dirname resolves to packages/kilo-vscode/dist/
+  let root = path.resolve(__dirname, "..", "..", "..", "..")
+  
+  // Try to start the server
+  try {
+    const proc = spawn("python", [
+      "02_scripts/helpers/whisper_server.py",
+      "--port", PORT,
+    ], {
+      cwd: root,
+      detached: true,
+      stdio: "ignore",
+    })
+    proc.unref()
+
+    // Wait for server to become healthy
+    await new Promise<void>((resolve, reject) => {
+      const start = Date.now()
+      const maxWait = 120_000 // 2 minutes max (model download on first run)
+      const iv = setInterval(async () => {
+        const healthy = await ensureServer()
+        if (healthy) {
+          clearInterval(iv)
+          resolve()
+        } else if (Date.now() - start > maxWait) {
+          clearInterval(iv)
+          reject(new Error("Server start timed out"))
+        }
+      }, 3000)
+    })
+    return true
+  } catch {
+    return false
+  }
+}
 
 export async function transcribeLocal(
   data: string,
@@ -8,8 +66,23 @@ export async function transcribeLocal(
   _modelId: string,
   signal?: AbortSignal,
 ): Promise<SpeechToTextResult> {
+  // Pre-flight: health check, auto-start if needed
+  if (!(await ensureServer())) {
+    if (!didWarn) {
+      console.log("[Kilo STT] Whisper server not running, attempting auto-start...")
+      didWarn = true
+    }
+    const started = await startServer()
+    if (!started) {
+      return fail(
+        "not_available",
+        "Whisper server not running and auto-start failed. Start manually:\n  python 02_scripts/helpers/whisper_server.py"
+      )
+    }
+  }
+
   try {
-    const timeout = AbortSignal.timeout(5 * 60_000) // 5 minute timeout
+    const timeout = AbortSignal.timeout(5 * 60_000)
     const sig = signal ? AbortSignal.any([signal, timeout]) : timeout
 
     const res = await fetch(URL, {
@@ -32,9 +105,6 @@ export async function transcribeLocal(
   } catch (err: unknown) {
     if (signal?.aborted) return fail("cancelled", "Transcription cancelled")
     const msg = err instanceof Error ? err.message : String(err)
-    if (msg.includes("refused") || msg.includes("not available")) {
-      return fail("not_available", "Local Whisper server not running. Start with: python 02_scripts/helpers/whisper_server.py")
-    }
     return fail(undefined, `Local Whisper failed: ${msg}`)
   }
 }
