@@ -21,11 +21,12 @@ async function ensureServer(): Promise<boolean> {
   }
 }
 
-async function startServer(): Promise<boolean> {
-  // Find the project root — navigating up from dist/
-  // The server script is at <root>/02_scripts/helpers/whisper_server.py
-  // When running via bun run extension, __dirname resolves to packages/kilo-vscode/dist/
-  let root = path.resolve(__dirname, "..", "..", "..", "..")
+async function startServer(cwd?: string): Promise<boolean> {
+  // Use the workspace directory if available, otherwise try __dirname resolution
+  let root = cwd
+  if (!root || !root.trim()) {
+    root = path.resolve(__dirname, "..", "..", "..", "..")
+  }
   
   // Try to start the server
   try {
@@ -64,6 +65,7 @@ export async function transcribeLocal(
   data: string,
   language: string | undefined,
   _modelId: string,
+  dir?: string,
   signal?: AbortSignal,
 ): Promise<SpeechToTextResult> {
   // Pre-flight: health check, auto-start if needed
@@ -72,7 +74,7 @@ export async function transcribeLocal(
       console.log("[Kilo STT] Whisper server not running, attempting auto-start...")
       didWarn = true
     }
-    const started = await startServer()
+    const started = await startServer(dir)
     if (!started) {
       return fail(
         "not_available",
@@ -82,14 +84,14 @@ export async function transcribeLocal(
   }
 
   try {
-    const timeout = AbortSignal.timeout(5 * 60_000)
+    const timeout = AbortSignal.timeout(60_000)
     const sig = signal ? AbortSignal.any([signal, timeout]) : timeout
 
     const res = await fetch(URL, {
       method: "POST",
       signal: sig,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data, language: "hu" }),
+      body: JSON.stringify({ data, language: language || "auto" }),
     })
 
     if (!res.ok) {

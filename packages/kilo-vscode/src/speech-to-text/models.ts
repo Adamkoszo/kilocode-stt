@@ -41,7 +41,10 @@ const models: SpeechToTextModelDef[] = [
 ]
 
 export const SPEECH_TO_TEXT_MODELS: readonly SpeechToTextModelDef[] = models
-export const DEFAULT_SPEECH_TO_TEXT_MODEL: SpeechToTextModelDef = models[4]!
+// Default: openai/whisper-1 — goes through OpenAI API (stable).
+// Note: whisper-large-v3 & whisper-large-v3-turbo route through Groq → known timeout bug.
+// whisper-1 provides the same quality on OpenAI's backend.
+export const DEFAULT_SPEECH_TO_TEXT_MODEL: SpeechToTextModelDef = models[2]!
 
 export function getSpeechToTextModel(id: string | undefined): SpeechToTextModelDef {
   for (const model of models) {

@@ -190,10 +190,10 @@ async function main() {
   }
 
   const sourceBinPath = await ensureBuiltBinary()
-  await $`mkdir -p ${targetBinDir}`
-  await $`cp ${sourceBinPath} ${targetBinPath}`
+  try { await $`mkdir -p ${targetBinDir}` } catch { require("fs").mkdirSync(targetBinDir, { recursive: true }) }
+  await Bun.write(targetBinPath, Bun.file(sourceBinPath))
   await copyTreeSitterResources(sourceBinPath, targetBinPath)
-  chmodSync(targetBinPath, 0o755)
+  try { chmodSync(targetBinPath, 0o755) } catch {}
   await ensureFfmpegForTarget(currentFfmpegTarget(), targetBinDir)
 
   // Record the CLI source version so future runs detect when a rebuild is needed

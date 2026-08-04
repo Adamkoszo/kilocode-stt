@@ -301,7 +301,16 @@ async function windowsInputArgSets(bin: string): Promise<Args[]> {
 
   const devices = await listDshowAudioDevices(bin)
   if (devices.length === 0) throw new Error("No Windows audio input devices found for speech input")
-  return devices.map((device) => ({ input: ["-f", "dshow", "-i", `audio=${device}`] }))
+
+  // Prefer USB/external microphones over built-in ones (Intel, Realtek, etc.)
+  const builtin = /intel|realtek|built.?in|laptop|array|stereo mix/i
+  const sorted = [...devices].sort((a, b) => {
+    const aBuiltin = builtin.test(a) ? 1 : 0
+    const bBuiltin = builtin.test(b) ? 1 : 0
+    return aBuiltin - bBuiltin
+  })
+
+  return sorted.map((device) => ({ input: ["-f", "dshow", "-i", `audio=${device}`] }))
 }
 
 async function listDshowAudioDevices(bin: string): Promise<string[]> {
